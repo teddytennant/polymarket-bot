@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "polymarket-bot"
+version = "0.1.0"
+description = "Paper trading bot for Polymarket prediction markets"
+requires-python = ">=3.11"
+dependencies = ["requests", "textual>=1.0.0"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-asyncio"]
+
+[project.scripts]
+polymarket-bot = "polymarket_bot.runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
