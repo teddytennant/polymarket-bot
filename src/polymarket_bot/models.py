@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -74,17 +75,18 @@ class Market:
 
     @classmethod
     def from_api(cls, data: dict) -> Market:
-        outcomes = tuple(data.get("outcomes", ["Yes", "No"]))
+        raw_outcomes = data.get("outcomes", ["Yes", "No"])
+        if isinstance(raw_outcomes, str):
+            raw_outcomes = json.loads(raw_outcomes)
+        outcomes = tuple(raw_outcomes)
 
         raw_prices = data.get("outcomePrices", [])
         if isinstance(raw_prices, str):
-            import json
             raw_prices = json.loads(raw_prices)
         outcome_prices = tuple(Decimal(str(p)) for p in raw_prices)
 
         raw_tokens = data.get("clobTokenIds", [])
         if isinstance(raw_tokens, str):
-            import json
             raw_tokens = json.loads(raw_tokens)
         token_ids = tuple(str(t) for t in raw_tokens)
 
