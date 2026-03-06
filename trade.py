@@ -57,15 +57,23 @@ def sell_all(client, engine, portfolio):
 def check_settlements(client, engine, portfolio, token_market_map):
     """Check all held tokens for settlements. Returns count settled."""
     settled = 0
-    for token_id, condition_id in token_market_map.items():
+    for token_id, condition_id in list(token_market_map.items()):
         try:
+            # Record positions before settlement to report results
+            held = {}
+            for side in (Side.YES, Side.NO):
+                pos = portfolio.get_position(token_id, side)
+                if pos:
+                    held[side] = pos
+
+            if not held:
+                continue
+
             market = client.get_market(condition_id)
             if not market.closed:
                 continue
-
             if len(market.outcome_prices) < 2:
                 continue
-
             if market.outcome_prices[0] >= Decimal("0.99"):
                 winning_side = "yes"
             elif market.outcome_prices[1] >= Decimal("0.99"):
@@ -73,15 +81,13 @@ def check_settlements(client, engine, portfolio, token_market_map):
             else:
                 continue
 
-            for side in (Side.YES, Side.NO):
-                pos = portfolio.get_position(token_id, side)
-                if pos:
-                    won = side.value == winning_side
-                    settle_price = Decimal("1.00") if won else Decimal("0.00")
-                    pnl = (settle_price - pos.avg_price) * pos.quantity
-                    short_id = token_id[:15]
-                    print(f"  SETTLED {short_id} {side.value.upper()}: {'WON' if won else 'LOST'} "
-                          f"{pos.quantity} contracts, P&L: {pnl:+.2f}")
+            for side, pos in held.items():
+                won = side.value == winning_side
+                settle_price = Decimal("1.00") if won else Decimal("0.00")
+                pnl = (settle_price - pos.avg_price) * pos.quantity
+                short_id = token_id[:15]
+                print(f"  SETTLED {short_id} {side.value.upper()}: {'WON' if won else 'LOST'} "
+                      f"{pos.quantity} contracts, P&L: {pnl:+.2f}")
 
             portfolio.settle_market(token_id, winning_side=winning_side)
             settled += 1
