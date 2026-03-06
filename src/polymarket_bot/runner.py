@@ -235,6 +235,8 @@ def run_cycle(
                 slug=market.slug,
                 yes_price=str(market.yes_price),
                 no_price=str(market.no_price),
+                yes_token_id=market.yes_token_id,
+                no_token_id=market.no_token_id,
                 signal=signal.side.value.upper() if signal else None,
             )
 

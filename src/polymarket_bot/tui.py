@@ -117,7 +117,7 @@ class DashboardApp(App):
         self._start_time = time.time()
         self._paused = threading.Event()
         self._paused.set()  # starts unpaused
-        self._market_prices: dict[str, tuple[str, str]] = {}
+        self._token_prices: dict[str, Decimal] = {}
         self._portfolio: Portfolio | None = None
         self._should_stop = threading.Event()
 
@@ -250,11 +250,15 @@ class DashboardApp(App):
                     f"{d.get('quantity', '?')} contracts @ {d.get('price', '?')}"
                 )
             elif event.event_type == EventType.MARKET_SCANNED:
-                slug = d.get("slug", "?")
-                self._market_prices[slug] = (
-                    d.get("yes_price", "0"),
-                    d.get("no_price", "0"),
-                )
+                try:
+                    yes_tid = d.get("yes_token_id", "")
+                    no_tid = d.get("no_token_id", "")
+                    if yes_tid:
+                        self._token_prices[yes_tid] = Decimal(d.get("yes_price", "0"))
+                    if no_tid:
+                        self._token_prices[no_tid] = Decimal(d.get("no_price", "0"))
+                except Exception:
+                    pass
 
         if events:
             scanned = [
@@ -293,17 +297,11 @@ class DashboardApp(App):
         pos_table.clear()
         for (token_id, side), pos in self._portfolio.positions.items():
             short_id = token_id[:12] + "..." if len(token_id) > 15 else token_id
-            # Try to estimate unrealized P&L from cached prices
             unrl_str = "--"
-            for slug, prices in self._market_prices.items():
-                if side == Side.YES:
-                    try:
-                        current = Decimal(prices[0])
-                        unrealized = (current - pos.avg_price) * pos.quantity
-                        unrl_str = f"{'+' if unrealized >= 0 else ''}{unrealized:.2f}"
-                    except Exception:
-                        pass
-                    break
+            current_price = self._token_prices.get(token_id)
+            if current_price is not None:
+                unrealized = (current_price - pos.avg_price) * pos.quantity
+                unrl_str = f"{'+' if unrealized >= 0 else ''}{unrealized:.2f}"
 
             pos_table.add_row(
                 short_id,
