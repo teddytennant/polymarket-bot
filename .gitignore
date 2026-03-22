@@ -12,6 +12,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 result
+flake.lock
 .dev-bin/
 state.json
 sim_state.json
