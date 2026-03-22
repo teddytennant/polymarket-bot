@@ -229,6 +229,8 @@ def run():
             continue
         if opp["edge"] <= opp["spread"]:
             continue
+        if opp["ask"] < Decimal("0.02"):
+            continue
         budget = min(Decimal("500"), portfolio.balance * Decimal("0.06"))
         qty = min(500, int(budget / opp["ask"]))
         if qty >= 20:
@@ -273,7 +275,7 @@ def run():
             print_status(portfolio, f"  [{elapsed_hr:.1f}h] ")
 
         # Every 30 min: take-profit checks
-        if cycle % 6 == 0 and portfolio.balance > Decimal("200"):
+        if cycle % 6 == 0:
             for (token_id, side), pos in list(portfolio.positions.items()):
                 try:
                     ob = client.get_orderbook(token_id)
