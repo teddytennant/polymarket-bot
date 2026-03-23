@@ -62,8 +62,13 @@ class PaperTradingEngine:
 
         return fills
 
-    def sell_position(self, token_id: str, side: Side, quantity: int) -> list[Fill]:
-        """Sell contracts by matching against bid levels (highest first)."""
+    def sell_position(
+        self, token_id: str, side: Side, quantity: int
+    ) -> tuple[list[Fill], int]:
+        """Sell contracts by matching against bid levels (highest first).
+
+        Returns (fills, unfilled_quantity) so callers can handle partial fills.
+        """
         position = self.portfolio.get_position(token_id, side)
         if position is None:
             raise ValueError(f"No position for {token_id} {side.value}")
@@ -100,7 +105,7 @@ class PaperTradingEngine:
                 quantity=fill.quantity,
             )
 
-        return fills
+        return fills, remaining
 
     def check_settlements(self, token_market_map: dict[str, str]) -> None:
         """Check markets for resolution. token_market_map: {token_id: condition_id}."""

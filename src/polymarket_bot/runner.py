@@ -320,7 +320,7 @@ def run_cycle(
                 )
 
             try:
-                sell_fills = engine.sell_position(token_id, side, pos.quantity)
+                sell_fills, _unfilled = engine.sell_position(token_id, side, pos.quantity)
                 if sell_fills:
                     exits_count += 1
                     total = sum(f.total_cost for f in sell_fills)

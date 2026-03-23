@@ -188,10 +188,11 @@ class TestSellPosition:
             ]),
             asks=tuple(),
         )
-        fills = engine.sell_position("t", Side.YES, 10)
+        fills, unfilled = engine.sell_position("t", Side.YES, 10)
         assert len(fills) == 1
         assert fills[0].price == Decimal("0.65")
         assert fills[0].quantity == 10
+        assert unfilled == 0
 
     def test_walks_multiple_bid_levels(self, engine, mock_client):
         engine.portfolio.record_fill(
@@ -205,12 +206,13 @@ class TestSellPosition:
             ]),
             asks=tuple(),
         )
-        fills = engine.sell_position("t", Side.YES, 25)
+        fills, unfilled = engine.sell_position("t", Side.YES, 25)
         assert len(fills) == 2
         assert fills[0].price == Decimal("0.60")
         assert fills[0].quantity == 15
         assert fills[1].price == Decimal("0.55")
         assert fills[1].quantity == 10
+        assert unfilled == 0
 
     def test_partial_sell_leaves_remaining(self, engine, mock_client):
         engine.portfolio.record_fill(
@@ -221,12 +223,31 @@ class TestSellPosition:
             bids=tuple([OrderbookLevel(price=Decimal("0.55"), quantity=100)]),
             asks=tuple(),
         )
-        fills = engine.sell_position("t", Side.YES, 5)
+        fills, unfilled = engine.sell_position("t", Side.YES, 5)
         assert len(fills) == 1
         assert fills[0].quantity == 5
+        assert unfilled == 0
         pos = engine.portfolio.get_position("t", Side.YES)
         assert pos is not None
         assert pos.quantity == 15
+
+    def test_partial_fill_thin_orderbook(self, engine, mock_client):
+        """When orderbook is thin, returns unfilled quantity."""
+        engine.portfolio.record_fill(
+            Fill(token_id="t", side=Side.YES, price=Decimal("0.50"), quantity=100)
+        )
+        mock_client.get_orderbook.return_value = Orderbook(
+            token_id="t",
+            bids=tuple([OrderbookLevel(price=Decimal("0.55"), quantity=30)]),
+            asks=tuple(),
+        )
+        fills, unfilled = engine.sell_position("t", Side.YES, 100)
+        assert len(fills) == 1
+        assert fills[0].quantity == 30
+        assert unfilled == 70
+        pos = engine.portfolio.get_position("t", Side.YES)
+        assert pos is not None
+        assert pos.quantity == 70
 
     def test_raises_on_no_position(self, engine, mock_client):
         with pytest.raises(ValueError, match="No position"):
@@ -246,8 +267,9 @@ class TestSellPosition:
         mock_client.get_orderbook.return_value = Orderbook(
             token_id="t", bids=tuple(), asks=tuple()
         )
-        fills = engine.sell_position("t", Side.YES, 5)
+        fills, unfilled = engine.sell_position("t", Side.YES, 5)
         assert fills == []
+        assert unfilled == 5
         pos = engine.portfolio.get_position("t", Side.YES)
         assert pos is not None
         assert pos.quantity == 10

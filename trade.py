@@ -33,13 +33,15 @@ def buy(engine, portfolio, token_id, side, price, quantity, label=""):
     return 0, Decimal("0")
 
 
-def sell_all(client, engine, portfolio):
-    """Sell every open position."""
+def sell_all(client, engine, portfolio, max_retries=3, retry_delay=10):
+    """Sell every open position, retrying partial fills on thin orderbooks."""
     total_proceeds = Decimal("0")
+    unsold: list[tuple[str, Side, int]] = []
+
     for (token_id, side), pos in list(portfolio.positions.items()):
         short_id = token_id[:15]
         try:
-            fills = engine.sell_position(token_id, side, pos.quantity)
+            fills, unfilled = engine.sell_position(token_id, side, pos.quantity)
             if fills:
                 total = sum(f.total_cost for f in fills)
                 qty = sum(f.quantity for f in fills)
@@ -47,10 +49,53 @@ def sell_all(client, engine, portfolio):
                 pnl = total - pos.avg_price * qty
                 total_proceeds += total
                 print(f"  SOLD {short_id:>15} {side.value.upper()}: {qty:>5} @ {avg:.4f} = ${total:>8.2f}  (P&L: {pnl:+.2f})")
+                if unfilled > 0:
+                    print(f"  PARTIAL {short_id:>15}: {unfilled} contracts unfilled (thin orderbook)")
+                    unsold.append((token_id, side, unfilled))
             else:
                 print(f"  NO BIDS {short_id}: empty orderbook")
+                unsold.append((token_id, side, pos.quantity))
         except ValueError as e:
             print(f"  ERROR {short_id}: {e}")
+
+    # Retry unsold positions with backoff
+    for attempt in range(1, max_retries + 1):
+        if not unsold:
+            break
+        print(f"\n  --- Retry {attempt}/{max_retries} for {len(unsold)} unsold positions (waiting {retry_delay}s) ---")
+        time.sleep(retry_delay)
+        still_unsold: list[tuple[str, Side, int]] = []
+        for token_id, side, remaining_qty in unsold:
+            short_id = token_id[:15]
+            # Re-check position in case it was settled
+            current_pos = portfolio.get_position(token_id, side)
+            if current_pos is None:
+                continue
+            sell_qty = min(remaining_qty, current_pos.quantity)
+            if sell_qty <= 0:
+                continue
+            try:
+                fills, unfilled = engine.sell_position(token_id, side, sell_qty)
+                if fills:
+                    total = sum(f.total_cost for f in fills)
+                    qty = sum(f.quantity for f in fills)
+                    avg = total / qty if qty else Decimal("0")
+                    pnl = total - current_pos.avg_price * qty
+                    total_proceeds += total
+                    print(f"  SOLD {short_id:>15} {side.value.upper()}: {qty:>5} @ {avg:.4f} = ${total:>8.2f}  (P&L: {pnl:+.2f})")
+                if unfilled > 0:
+                    print(f"  STILL UNSOLD {short_id:>15}: {unfilled} contracts remain")
+                    still_unsold.append((token_id, side, unfilled))
+            except ValueError as e:
+                print(f"  RETRY ERROR {short_id}: {e}")
+        unsold = still_unsold
+        retry_delay = min(retry_delay * 2, 60)
+
+    if unsold:
+        print(f"\n  WARNING: {len(unsold)} positions could not be fully liquidated:")
+        for token_id, side, qty in unsold:
+            print(f"    {token_id[:15]} {side.value.upper()}: {qty} contracts")
+
     return total_proceeds
 
 
@@ -281,7 +326,7 @@ def run():
                     ob = client.get_orderbook(token_id)
                     bid = ob.best_bid
                     if bid and bid >= pos.avg_price + Decimal("0.03"):
-                        fills = engine.sell_position(token_id, side, pos.quantity)
+                        fills, unfilled = engine.sell_position(token_id, side, pos.quantity)
                         if fills:
                             total = sum(f.total_cost for f in fills)
                             qty = sum(f.quantity for f in fills)
