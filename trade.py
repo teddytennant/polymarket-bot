@@ -217,11 +217,7 @@ def find_edge_markets(client):
 
             time.sleep(0.3)
         except Exception as e:
-            if "429" in str(e):
-                print(f"  Rate limited, waiting...")
-                time.sleep(3)
-            else:
-                print(f"  WARNING: failed for {m.slug[:30]}: {e}")
+            print(f"  WARNING: failed for {m.slug[:30]}: {e}")
 
     opportunities.sort(key=lambda o: o["edge"], reverse=True)
     return opportunities

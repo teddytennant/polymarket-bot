@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 import requests
@@ -11,6 +12,11 @@ from polymarket_bot.models import Market, Orderbook, PricePoint
 GAMMA_URL = "https://gamma-api.polymarket.com"
 CLOB_URL = "https://clob.polymarket.com"
 
+# Retry config
+_MAX_RETRIES = 4
+_BASE_DELAY = 1.0  # seconds
+_MAX_DELAY = 30.0  # seconds
+
 
 class PolymarketClient:
     def __init__(
@@ -18,15 +24,40 @@ class PolymarketClient:
         session: Optional[requests.Session] = None,
         gamma_url: str = GAMMA_URL,
         clob_url: str = CLOB_URL,
+        max_retries: int = _MAX_RETRIES,
+        base_delay: float = _BASE_DELAY,
     ):
         self.session = session or requests.Session()
         self.gamma_url = gamma_url
         self.clob_url = clob_url
+        self.max_retries = max_retries
+        self.base_delay = base_delay
 
     def _get(self, url: str, params: Optional[dict] = None) -> dict | list:
-        resp = self.session.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+        last_exc: Optional[Exception] = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self.session.get(url, params=params, timeout=10)
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        delay = min(float(retry_after), _MAX_DELAY)
+                    else:
+                        delay = min(self.base_delay * (2 ** attempt), _MAX_DELAY)
+                    if attempt < self.max_retries:
+                        time.sleep(delay)
+                        continue
+                resp.raise_for_status()
+                return resp.json()
+            except requests.exceptions.ConnectionError as e:
+                last_exc = e
+                if attempt < self.max_retries:
+                    delay = min(self.base_delay * (2 ** attempt), _MAX_DELAY)
+                    time.sleep(delay)
+                    continue
+            except requests.exceptions.HTTPError:
+                raise
+        raise last_exc  # type: ignore[misc]
 
     # --- Gamma API: market discovery ---
 
